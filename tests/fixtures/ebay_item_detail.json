@@ -1,0 +1,67 @@
+{
+  "itemId": "v1|1234567890|0",
+  "title": "Apple MacBook Pro 14 M1 Pro 16GB 1TB Space Black with charger",
+  "description": "Battery health 93%. Includes original charger and box.",
+  "condition": "Used",
+  "conditionDescription": "Minor lid wear. Fully functional.",
+  "price": {
+    "value": "899.00",
+    "currency": "USD"
+  },
+  "itemWebUrl": "https://www.ebay.com/itm/1234567890",
+  "itemLocation": {
+    "city": "Brooklyn",
+    "stateOrProvince": "NY",
+    "country": "US"
+  },
+  "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/macbook-main.jpg"
+  },
+  "additionalImages": [
+    {
+      "imageUrl": "https://i.ebayimg.com/images/g/macbook-side.jpg"
+    }
+  ],
+  "product": {
+    "title": "Apple MacBook Pro 14",
+    "brand": "Apple",
+    "additionalImages": [
+      {
+        "imageUrl": "https://i.ebayimg.com/images/g/macbook-box.jpg"
+      }
+    ]
+  },
+  "localizedAspects": [
+    {
+      "name": "Brand",
+      "value": "Apple"
+    },
+    {
+      "name": "Model",
+      "value": "MacBook Pro 14"
+    },
+    {
+      "name": "Processor",
+      "value": "M1 Pro"
+    }
+  ],
+  "estimatedAvailabilities": [
+    {
+      "availabilityStatus": "IN_STOCK",
+      "estimatedAvailableQuantity": 1
+    }
+  ],
+  "seller": {
+    "username": "seller123",
+    "userId": "user-123"
+  },
+  "shippingOptions": [
+    {
+      "shippingCostType": "FIXED",
+      "shippingCost": {
+        "value": "19.99"
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scanner"
+version = "0.1.0"
+description = "Real-time electronics listing underwriting and alerting system."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.14.1",
+  "fastapi>=0.115.6",
+  "httpx>=0.28.1",
+  "psycopg[binary]>=3.2.4",
+  "pydantic>=2.10.3",
+  "redis>=5.2.1",
+  "sqlalchemy>=2.0.39",
+  "structlog>=24.4.0",
+  "uvicorn>=0.34.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.4",
+  "pytest-cov>=6.0.0",
+  "ruff>=0.9.6"
+]
+
+[tool.setuptools.packages.find]
+include = ["scanner*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]
