@@ -115,6 +115,18 @@ class CraigslistDetailGateService:
                 ),
             )
         )
+        search_delivery_filter_applied = bool(
+            event.attributes.get("search_delivery_filter_applied")
+            or ("delivery_available=1" in str(event.raw_payload.get("page_url", "")))
+        )
+
+        if any(pattern in haystack for pattern in PICKUP_ONLY_PATTERNS):
+            return DetailGateDecision(
+                should_download_photos=False,
+                fulfillment_status=FulfillmentStatus.PICKUP_ONLY,
+                exclusion_reason="pickup_only",
+                reasons=["Listing is pickup only, which is a hard v1 exclusion."],
+            )
 
         if any(pattern in haystack for pattern in SHIPPABLE_PATTERNS):
             return DetailGateDecision(
@@ -123,12 +135,14 @@ class CraigslistDetailGateService:
                 reasons=["Listing appears shippable or delivery-enabled."],
             )
 
-        if any(pattern in haystack for pattern in PICKUP_ONLY_PATTERNS):
+        if search_delivery_filter_applied:
             return DetailGateDecision(
-                should_download_photos=False,
-                fulfillment_status=FulfillmentStatus.PICKUP_ONLY,
-                exclusion_reason="pickup_only",
-                reasons=["Listing is pickup only, which is a hard v1 exclusion."],
+                should_download_photos=True,
+                fulfillment_status=FulfillmentStatus.UNKNOWN,
+                reasons=[
+                    "Craigslist search used delivery_available=1, so the listing advances "
+                    "despite unclear fulfillment language on the detail page."
+                ],
             )
 
         return DetailGateDecision(

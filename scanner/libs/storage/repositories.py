@@ -431,6 +431,7 @@ class TriageRepository:
         *,
         source: str,
         limit: int | None = None,
+        include_unknown_rechecks: bool = False,
     ) -> list[tuple[ListingModel, TriageResultModel]]:
         query = (
             select(ListingModel, TriageResultModel)
@@ -447,7 +448,15 @@ class TriageRepository:
             if llm_triage.get("needs_detail_fetch") is not True:
                 continue
             if triage.detail_gate_json is not None:
-                continue
+                if not include_unknown_rechecks:
+                    continue
+                detail_gate = triage.detail_gate_json or {}
+                should_recheck = (
+                    detail_gate.get("fulfillment_status") == "UNKNOWN"
+                    and detail_gate.get("should_download_photos") is False
+                )
+                if not should_recheck:
+                    continue
             filtered.append((listing, triage))
         if limit is not None:
             return filtered[:limit]

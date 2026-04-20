@@ -143,6 +143,43 @@ def test_detail_gate_rejects_pickup_only_and_keeps_shippable() -> None:
     assert accepted.should_download_photos is True
     assert accepted.fulfillment_status == FulfillmentStatus.SHIPPABLE
 
+    soft_keep = service.evaluate(
+        _build_event(
+            title="ThinkPad X1 Carbon",
+            description="Excellent condition with charger.",
+        ).model_copy(
+            update={
+                "attributes": {
+                    "search_delivery_filter_applied": True,
+                },
+                "raw_payload": {
+                    "page_url": "https://newyork.craigslist.org/search/sya?delivery_available=1",
+                },
+            }
+        )
+    )
+    assert soft_keep.should_download_photos is True
+    assert soft_keep.fulfillment_status == FulfillmentStatus.UNKNOWN
+    assert soft_keep.exclusion_reason is None
+
+    pickup_overrides_soft_keep = service.evaluate(
+        _build_event(
+            title="MacBook Pro 14",
+            description="Pickup only in Brooklyn.",
+        ).model_copy(
+            update={
+                "attributes": {
+                    "search_delivery_filter_applied": True,
+                },
+                "raw_payload": {
+                    "page_url": "https://newyork.craigslist.org/search/sya?delivery_available=1",
+                },
+            }
+        )
+    )
+    assert pickup_overrides_soft_keep.should_download_photos is False
+    assert pickup_overrides_soft_keep.fulfillment_status == FulfillmentStatus.PICKUP_ONLY
+
 
 def test_craigslist_connector_hydrates_detail_page_signals() -> None:
     detail_html = """

@@ -26,6 +26,10 @@ def _build_fetch_failure_decision(exc: Exception) -> DetailGateDecision:
 def run_once(*, limit: int | None = None) -> dict:
     container = ApplicationContainer()
     container.ensure_database()
+    include_unknown_rechecks = (
+        os.getenv("CRAIGSLIST_STAGE2_RECHECK_UNKNOWN", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
     connector = container.connector_registry.create("craigslist")
     if not isinstance(connector, CraigslistConnector):
         raise RuntimeError("Craigslist connector registry returned an unexpected connector type.")
@@ -42,6 +46,7 @@ def run_once(*, limit: int | None = None) -> dict:
         candidates = triage_repository.list_detail_gate_candidates(
             source="craigslist",
             limit=limit,
+            include_unknown_rechecks=include_unknown_rechecks,
         )
 
         for listing, triage_row in candidates:
@@ -94,6 +99,7 @@ def run_once(*, limit: int | None = None) -> dict:
         "shippable": shippable,
         "pickup_only": pickup_only,
         "unknown": unknown,
+        "include_unknown_rechecks": include_unknown_rechecks,
         "examples": examples,
     }
     logger.info("craigslist_stage2.completed", **summary)

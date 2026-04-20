@@ -159,10 +159,12 @@ class CraigslistConnector:
                     attributes={
                         "anchor_label": source_label,
                         "search_page_url": page_url,
+                        "search_delivery_filter_applied": "delivery_available=1" in page_url,
                     },
                     raw_payload={
                         "page_url": page_url,
                         "source_label": source_label,
+                        "search_delivery_filter_applied": "delivery_available=1" in page_url,
                     },
                 )
             )
