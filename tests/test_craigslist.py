@@ -4,6 +4,7 @@ from scanner.libs.connectors.craigslist import CraigslistConnector
 from scanner.libs.nlp.lots import LotAnalyzer
 from scanner.libs.nlp.triage import CraigslistDetailGateService, StageZeroTriageService
 from scanner.libs.schemas import FulfillmentStatus, RawListingEvent
+from scanner.libs.storage.repositories import ListingRepository, TriageRepository
 from scanner.libs.utils.config import CraigslistAnchor, CraigslistSettings
 
 
@@ -148,3 +149,28 @@ def test_lot_analyzer_flags_multi_item_bundles_for_split_valuation() -> None:
     assert analysis.is_multi_item is True
     assert analysis.should_split_valuation is True
     assert len(analysis.component_candidates) >= 2
+
+
+def test_craigslist_cards_persist_with_triage_metadata(test_container) -> None:
+    event = _build_event(
+        title="MacBook Air + Mac mini bundle",
+        description="Selling both together, delivery available.",
+        price=600.0,
+    )
+
+    with test_container.session_scope() as session:
+        listings = ListingRepository(session)
+        triage_repository = TriageRepository(session)
+
+        listing = listings.upsert_event(event)
+        triage = test_container.stage_zero_triage.evaluate(event)
+        lot_analysis = test_container.lot_analyzer.analyze(event)
+        detail_gate = test_container.detail_gate.evaluate(event)
+        triage_repository.save(
+            listing_pk=listing.listing_pk,
+            stage_zero=triage,
+            lot_analysis=lot_analysis,
+            detail_gate=detail_gate,
+        )
+
+        assert triage_repository.count_by_source("craigslist") == 1

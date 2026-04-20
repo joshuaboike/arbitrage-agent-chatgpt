@@ -15,6 +15,7 @@ from scanner.libs.nlp.triage import CraigslistDetailGateService, StageZeroTriage
 from scanner.libs.policy.engine import PolicyEngine
 from scanner.libs.services.pipeline import UnderwritingPipeline
 from scanner.libs.storage.database import build_session_factory
+from scanner.libs.storage.models import Base
 from scanner.libs.taxonomy.service import TaxonomyService
 from scanner.libs.utils.config import (
     AppSettings,
@@ -58,6 +59,12 @@ class ApplicationContainer:
             craigslist_settings=self.craigslist_settings,
             ebay_settings=self.ebay_settings,
         )
+
+    def ensure_database(self) -> None:
+        engine = self.session_factory.kw.get("bind")
+        if engine is None:
+            raise RuntimeError("Session factory is not bound to a database engine.")
+        Base.metadata.create_all(bind=engine)
 
     @contextmanager
     def session_scope(self) -> Iterator[Session]:

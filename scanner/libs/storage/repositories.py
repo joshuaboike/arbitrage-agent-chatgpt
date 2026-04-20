@@ -10,9 +10,12 @@ from scanner.libs.schemas import (
     ActionRoute,
     AssetTaxonomyRecord,
     CompRecord,
+    DetailGateDecision,
+    LotAnalysis,
     OutcomeRecord,
     RawListingEvent,
     RecentAlertView,
+    TriageDecision,
     UnderwritingResult,
 )
 from scanner.libs.storage.models import (
@@ -22,6 +25,7 @@ from scanner.libs.storage.models import (
     ListingImageModel,
     ListingModel,
     OutcomeModel,
+    TriageResultModel,
     UnderwritingScoreModel,
 )
 
@@ -334,3 +338,43 @@ class OutcomeRepository:
         self.session.add(model)
         self.session.flush()
         return model
+
+
+class TriageRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def save(
+        self,
+        *,
+        listing_pk: str,
+        stage_zero: TriageDecision,
+        lot_analysis: LotAnalysis,
+        detail_gate: DetailGateDecision | None = None,
+    ) -> TriageResultModel:
+        model = self.session.scalar(
+            select(TriageResultModel).where(TriageResultModel.listing_pk == listing_pk)
+        )
+        if model is None:
+            model = TriageResultModel(
+                listing_pk=listing_pk,
+                stage_zero_json=stage_zero.model_dump(mode="json"),
+                lot_analysis_json=lot_analysis.model_dump(mode="json"),
+                detail_gate_json=detail_gate.model_dump(mode="json") if detail_gate else None,
+            )
+            self.session.add(model)
+        else:
+            model.stage_zero_json = stage_zero.model_dump(mode="json")
+            model.lot_analysis_json = lot_analysis.model_dump(mode="json")
+            model.detail_gate_json = detail_gate.model_dump(mode="json") if detail_gate else None
+
+        self.session.flush()
+        return model
+
+    def count_by_source(self, source: str) -> int:
+        query = (
+            select(TriageResultModel.triage_pk)
+            .join(ListingModel, ListingModel.listing_pk == TriageResultModel.listing_pk)
+            .where(ListingModel.source == source)
+        )
+        return len(self.session.scalars(query).all())

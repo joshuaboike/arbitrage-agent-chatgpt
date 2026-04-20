@@ -46,6 +46,9 @@ class ListingModel(Base):
     underwriting_score: Mapped[UnderwritingScoreModel | None] = relationship(
         back_populates="listing", cascade="all, delete-orphan", uselist=False
     )
+    triage_result: Mapped[TriageResultModel | None] = relationship(
+        back_populates="listing", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class ListingImageModel(Base):
@@ -107,6 +110,23 @@ class UnderwritingScoreModel(Base):
     )
 
     listing: Mapped[ListingModel] = relationship(back_populates="underwriting_score")
+
+
+class TriageResultModel(Base):
+    __tablename__ = "triage_results"
+
+    triage_pk: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    listing_pk: Mapped[str] = mapped_column(
+        ForeignKey("listings.listing_pk"), nullable=False, unique=True
+    )
+    stage_zero_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    lot_analysis_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    detail_gate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    triaged_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    listing: Mapped[ListingModel] = relationship(back_populates="triage_result")
 
 
 class CompModel(Base):

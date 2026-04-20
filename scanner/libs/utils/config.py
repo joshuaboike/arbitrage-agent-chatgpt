@@ -82,7 +82,7 @@ class AppSettings:
             app_env=os.getenv("APP_ENV", "development"),
             database_url=os.getenv(
                 "DATABASE_URL",
-                "sqlite+pysqlite:///:memory:",
+                "sqlite+pysqlite:///scanner.db",
             ),
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             event_bus_backend=os.getenv("EVENT_BUS_BACKEND", "inmemory"),
