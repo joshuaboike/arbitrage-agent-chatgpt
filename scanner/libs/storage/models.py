@@ -135,6 +135,10 @@ class TriageResultModel(Base):
     photo_reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    market_check_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    market_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     triaged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )

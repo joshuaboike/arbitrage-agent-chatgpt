@@ -310,6 +310,30 @@ class PhotoReviewResult(BaseSchema):
     reasons: list[str] = Field(default_factory=list)
 
 
+class MarketCheckComparable(BaseSchema):
+    source_listing_id: str
+    title: str | None = None
+    listing_url: str | None = None
+    total_price: float
+    price: float
+    shipping_price: float = 0.0
+    title_match_score: float
+
+
+class MarketCheckResult(BaseSchema):
+    query: str
+    strategy: str = "ebay_active_listing_proxy"
+    match_count: int
+    price_low: float | None = None
+    price_median: float | None = None
+    price_high: float | None = None
+    fast_sale_estimate: float | None = None
+    confidence: float = 0.0
+    comparable_titles: list[str] = Field(default_factory=list)
+    comparable_items: list[MarketCheckComparable] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
 class LotComponentCandidate(BaseSchema):
     item_type: str
     label: str
@@ -345,6 +369,8 @@ __all__ = [
     "LlmTriageDecision",
     "LotAnalysis",
     "LotComponentCandidate",
+    "MarketCheckComparable",
+    "MarketCheckResult",
     "OutcomeRecord",
     "PhotoReviewResult",
     "RawListingEvent",

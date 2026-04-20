@@ -13,6 +13,7 @@ from scanner.libs.schemas import (
     DetailGateDecision,
     LlmTriageDecision,
     LotAnalysis,
+    MarketCheckResult,
     OutcomeRecord,
     PhotoReviewResult,
     RawListingEvent,
@@ -397,6 +398,7 @@ class TriageRepository:
         llm_triage: LlmTriageDecision | None = None,
         llm_model: str | None = None,
         photo_review: PhotoReviewResult | None = None,
+        market_check: MarketCheckResult | None = None,
     ) -> TriageResultModel:
         model = self.session.scalar(
             select(TriageResultModel).where(TriageResultModel.listing_pk == listing_pk)
@@ -412,6 +414,8 @@ class TriageRepository:
                 llm_reviewed_at=datetime.now(UTC) if llm_triage else None,
                 photo_review_json=photo_review.model_dump(mode="json") if photo_review else None,
                 photo_reviewed_at=datetime.now(UTC) if photo_review else None,
+                market_check_json=market_check.model_dump(mode="json") if market_check else None,
+                market_checked_at=datetime.now(UTC) if market_check else None,
             )
             self.session.add(model)
         else:
@@ -426,6 +430,9 @@ class TriageRepository:
             if photo_review is not None:
                 model.photo_review_json = photo_review.model_dump(mode="json")
                 model.photo_reviewed_at = datetime.now(UTC)
+            if market_check is not None:
+                model.market_check_json = market_check.model_dump(mode="json")
+                model.market_checked_at = datetime.now(UTC)
 
         self.session.flush()
         return model
@@ -504,6 +511,38 @@ class TriageRepository:
                 mismatch_flags = set(photo_review.get("mismatch_flags") or [])
                 if "low_filesize_photos" not in mismatch_flags:
                     continue
+            filtered.append((listing, triage))
+        if limit is not None:
+            return filtered[:limit]
+        return filtered
+
+    def list_market_check_candidates(
+        self,
+        *,
+        source: str,
+        limit: int | None = None,
+        include_existing_rechecks: bool = False,
+    ) -> list[tuple[ListingModel, TriageResultModel]]:
+        query = (
+            select(ListingModel, TriageResultModel)
+            .join(TriageResultModel, TriageResultModel.listing_pk == ListingModel.listing_pk)
+            .where(ListingModel.source == source)
+            .order_by(ListingModel.first_seen_at.desc())
+        )
+        rows = self.session.execute(query).all()
+        filtered = []
+        for listing, triage in rows:
+            detail_gate = triage.detail_gate_json or {}
+            if triage.stage_zero_json.get("accepted") is not True:
+                continue
+            if (triage.llm_triage_json or {}).get("needs_detail_fetch") is not True:
+                continue
+            if detail_gate.get("should_download_photos") is not True:
+                continue
+            if triage.photo_review_json is None:
+                continue
+            if triage.market_check_json is not None and not include_existing_rechecks:
+                continue
             filtered.append((listing, triage))
         if limit is not None:
             return filtered[:limit]

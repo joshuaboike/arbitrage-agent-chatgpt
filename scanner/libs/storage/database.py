@@ -60,6 +60,10 @@ def ensure_local_schema_compatibility(engine) -> None:
         statements.append("ALTER TABLE triage_results ADD COLUMN photo_review_json JSON")
     if "photo_reviewed_at" not in existing_columns:
         statements.append("ALTER TABLE triage_results ADD COLUMN photo_reviewed_at DATETIME")
+    if "market_check_json" not in existing_columns:
+        statements.append("ALTER TABLE triage_results ADD COLUMN market_check_json JSON")
+    if "market_checked_at" not in existing_columns:
+        statements.append("ALTER TABLE triage_results ADD COLUMN market_checked_at DATETIME")
 
     if not statements:
         return
