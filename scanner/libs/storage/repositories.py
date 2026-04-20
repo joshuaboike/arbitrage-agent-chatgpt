@@ -14,6 +14,7 @@ from scanner.libs.schemas import (
     LlmTriageDecision,
     LotAnalysis,
     OutcomeRecord,
+    PhotoReviewResult,
     RawListingEvent,
     RecentAlertView,
     TriageDecision,
@@ -108,6 +109,47 @@ class ListingRepository:
         if listing is None:
             return None
         return RawListingEvent.model_validate(listing.raw_json)
+
+    def update_image_metadata(
+        self,
+        *,
+        listing_pk: str,
+        image_url: str,
+        local_path: str | None = None,
+        content_type: str | None = None,
+        size_bytes: int | None = None,
+        image_hash: str | None = None,
+        perceptual_hash: str | None = None,
+        downloaded_at: datetime | None = None,
+    ) -> ListingImageModel:
+        image = self.session.scalar(
+            select(ListingImageModel).where(
+                ListingImageModel.listing_pk == listing_pk,
+                ListingImageModel.image_url == image_url,
+            )
+        )
+        if image is None:
+            image = ListingImageModel(
+                listing_pk=listing_pk,
+                image_url=image_url,
+            )
+            self.session.add(image)
+
+        if local_path is not None:
+            image.local_path = local_path
+        if content_type is not None:
+            image.content_type = content_type
+        if size_bytes is not None:
+            image.size_bytes = size_bytes
+        if image_hash is not None:
+            image.image_hash = image_hash
+        if perceptual_hash is not None:
+            image.perceptual_hash = perceptual_hash
+        if downloaded_at is not None:
+            image.downloaded_at = downloaded_at
+
+        self.session.flush()
+        return image
 
 
 class AssetRepository:
@@ -354,6 +396,7 @@ class TriageRepository:
         detail_gate: DetailGateDecision | None = None,
         llm_triage: LlmTriageDecision | None = None,
         llm_model: str | None = None,
+        photo_review: PhotoReviewResult | None = None,
     ) -> TriageResultModel:
         model = self.session.scalar(
             select(TriageResultModel).where(TriageResultModel.listing_pk == listing_pk)
@@ -367,6 +410,8 @@ class TriageRepository:
                 llm_triage_json=llm_triage.model_dump(mode="json") if llm_triage else None,
                 llm_model=llm_model,
                 llm_reviewed_at=datetime.now(UTC) if llm_triage else None,
+                photo_review_json=photo_review.model_dump(mode="json") if photo_review else None,
+                photo_reviewed_at=datetime.now(UTC) if photo_review else None,
             )
             self.session.add(model)
         else:
@@ -378,6 +423,9 @@ class TriageRepository:
                 model.llm_triage_json = llm_triage.model_dump(mode="json")
                 model.llm_model = llm_model
                 model.llm_reviewed_at = datetime.now(UTC)
+            if photo_review is not None:
+                model.photo_review_json = photo_review.model_dump(mode="json")
+                model.photo_reviewed_at = datetime.now(UTC)
 
         self.session.flush()
         return model
@@ -425,6 +473,41 @@ class TriageRepository:
                 if model.llm_triage_json is not None
             ]
         )
+
+    def list_photo_review_candidates(
+        self,
+        *,
+        source: str,
+        limit: int | None = None,
+        include_low_info_rechecks: bool = False,
+    ) -> list[tuple[ListingModel, TriageResultModel]]:
+        query = (
+            select(ListingModel, TriageResultModel)
+            .join(TriageResultModel, TriageResultModel.listing_pk == ListingModel.listing_pk)
+            .where(ListingModel.source == source)
+            .order_by(ListingModel.first_seen_at.desc())
+        )
+        rows = self.session.execute(query).all()
+        filtered = []
+        for listing, triage in rows:
+            detail_gate = triage.detail_gate_json or {}
+            if triage.stage_zero_json.get("accepted") is not True:
+                continue
+            if (triage.llm_triage_json or {}).get("needs_detail_fetch") is not True:
+                continue
+            if detail_gate.get("should_download_photos") is not True:
+                continue
+            if triage.photo_review_json is not None:
+                if not include_low_info_rechecks:
+                    continue
+                photo_review = triage.photo_review_json or {}
+                mismatch_flags = set(photo_review.get("mismatch_flags") or [])
+                if "low_filesize_photos" not in mismatch_flags:
+                    continue
+            filtered.append((listing, triage))
+        if limit is not None:
+            return filtered[:limit]
+        return filtered
 
     def list_detail_gate_candidates(
         self,

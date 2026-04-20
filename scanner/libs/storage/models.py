@@ -57,9 +57,13 @@ class ListingImageModel(Base):
     image_pk: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     listing_pk: Mapped[str] = mapped_column(ForeignKey("listings.listing_pk"), nullable=False)
     image_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    local_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     perceptual_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     embedding_vector: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     listing: Mapped[ListingModel] = relationship(back_populates="images")
 
@@ -124,7 +128,13 @@ class TriageResultModel(Base):
     detail_gate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     llm_triage_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     llm_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    llm_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    llm_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    photo_review_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    photo_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     triaged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )

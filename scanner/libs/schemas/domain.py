@@ -293,6 +293,23 @@ class DetailGateDecision(BaseSchema):
     reasons: list[str] = Field(default_factory=list)
 
 
+class PhotoReviewResult(BaseSchema):
+    review_strategy: str = "metadata_first"
+    downloaded_photo_count: int
+    unique_photo_count: int
+    photo_quality_score: float
+    device_visibility_score: float
+    damage_flags: list[str] = Field(default_factory=list)
+    accessory_flags: list[str] = Field(default_factory=list)
+    fraud_flags: list[str] = Field(default_factory=list)
+    mismatch_flags: list[str] = Field(default_factory=list)
+    condition_band: str = "UNKNOWN"
+    confidence: float = 0.0
+    image_hashes: list[str] = Field(default_factory=list)
+    local_paths: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
 class LotComponentCandidate(BaseSchema):
     item_type: str
     label: str
@@ -329,6 +346,7 @@ __all__ = [
     "LotAnalysis",
     "LotComponentCandidate",
     "OutcomeRecord",
+    "PhotoReviewResult",
     "RawListingEvent",
     "RecentAlertView",
     "TriageDecision",

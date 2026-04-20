@@ -195,8 +195,10 @@ def test_craigslist_connector_hydrates_detail_page_signals() -> None:
           <span>delivery available</span>
         </p>
         <div class="mapaddress">Brooklyn</div>
+        <script src="https://www.craigslist.org/static/www/test.js"></script>
         <img src="https://images.craigslist.org/001.jpg" />
-        <img data-imgsrc="https://images.craigslist.org/002.jpg" />
+        <img data-imgsrc="https://images.craigslist.org/002_50x50c.jpg" />
+        <img data-imgsrc="https://images.craigslist.org/003.jpg" />
       </body>
     </html>
     """
@@ -224,6 +226,8 @@ def test_craigslist_connector_hydrates_detail_page_signals() -> None:
     assert detailed.shipping_type == "shipping_available"
     assert detailed.availability_status == "delivery_available"
     assert len(detailed.images) == 2
+    assert "test.js" not in "".join(detailed.images)
+    assert "50x50c" not in "".join(detailed.images)
     assert "delivery available" in detailed.attributes["detail_attributes"]
 
 

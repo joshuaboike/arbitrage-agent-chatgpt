@@ -208,11 +208,15 @@ class CraigslistConnector:
         image_urls = list(
             dict.fromkeys(
                 [
-                    *seed_event.images,
-                    *[
-                        html.unescape(match.group("url"))
-                        for match in DETAIL_IMAGE_RE.finditer(html_content)
-                    ],
+                    image_url
+                    for image_url in [
+                        *seed_event.images,
+                        *[
+                            html.unescape(match.group("url"))
+                            for match in DETAIL_IMAGE_RE.finditer(html_content)
+                        ],
+                    ]
+                    if _is_useful_craigslist_image_url(image_url)
                 ]
             )
         )
@@ -302,6 +306,18 @@ def _derive_fulfillment_signals(page_text: str) -> tuple[str | None, str | None]
     if "will ship" in normalized or "ships" in normalized:
         return "shipping_available", "shipping_available"
     return None, None
+
+
+def _is_useful_craigslist_image_url(image_url: str) -> bool:
+    if "images.craigslist.org/" not in image_url:
+        return False
+    thumbnail_match = re.search(r"_(?P<width>\d+)x(?P<height>\d+)(?:c)?\.", image_url)
+    if thumbnail_match:
+        width = int(thumbnail_match.group("width"))
+        height = int(thumbnail_match.group("height"))
+        if width <= 100 and height <= 100:
+            return False
+    return True
 
 
 def _strip_tags(value: str) -> str:
