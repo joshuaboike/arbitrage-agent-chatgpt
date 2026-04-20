@@ -16,6 +16,11 @@ TITLE_RE = re.compile(r'<div class="title">(?P<title>.*?)</div>', re.S)
 PRICE_RE = re.compile(r'<div class="price">\$(?P<price>.*?)</div>', re.S)
 LOCATION_RE = re.compile(r'<div class="location">\s*(?P<location>.*?)\s*</div>', re.S)
 LISTING_ID_RE = re.compile(r"/(?P<listing_id>\d+)\.html(?:$|\?)")
+DETAIL_TITLE_RE = re.compile(r'<span id="titletextonly">(?P<title>.*?)</span>', re.S)
+DETAIL_BODY_RE = re.compile(r'<section id="postingbody"[^>]*>(?P<body>.*?)</section>', re.S)
+DETAIL_ATTRGROUP_RE = re.compile(r'<p class="attrgroup"[^>]*>(?P<body>.*?)</p>', re.S)
+DETAIL_IMAGE_RE = re.compile(r'(?:src|data-imgsrc)="(?P<url>https?://[^"]+)"')
+DETAIL_MAPADDRESS_RE = re.compile(r'<div class="mapaddress">(?P<location>.*?)</div>', re.S)
 
 
 class CraigslistConnector:
@@ -78,6 +83,11 @@ class CraigslistConnector:
 
     def fetch_page_html(self, url: str) -> str:
         response = self.client.get(url)
+        response.raise_for_status()
+        return response.text
+
+    def fetch_detail_html(self, listing_url: str) -> str:
+        response = self.client.get(listing_url)
         response.raise_for_status()
         return response.text
 
@@ -159,6 +169,81 @@ class CraigslistConnector:
 
         return records
 
+    def hydrate_listing_detail(
+        self,
+        event: RawListingEvent,
+        *,
+        observed_at: datetime | None = None,
+    ) -> RawListingEvent:
+        if not event.listing_url:
+            raise ValueError("Craigslist detail hydration requires a listing URL.")
+        html_content = self.fetch_detail_html(event.listing_url)
+        return self.parse_detail_page(
+            html_content,
+            seed_event=event,
+            observed_at=observed_at,
+        )
+
+    def parse_detail_page(
+        self,
+        html_content: str,
+        *,
+        seed_event: RawListingEvent,
+        observed_at: datetime | None = None,
+    ) -> RawListingEvent:
+        detail_title = _extract_first_group(DETAIL_TITLE_RE, html_content, "title")
+        detail_body = _extract_first_group(DETAIL_BODY_RE, html_content, "body")
+        detail_location = _extract_first_group(DETAIL_MAPADDRESS_RE, html_content, "location")
+
+        attr_texts = [
+            cleaned
+            for match in DETAIL_ATTRGROUP_RE.finditer(html_content)
+            for cleaned in _split_attrgroup_text(match.group("body"))
+            if cleaned
+        ]
+        page_text_parts = [detail_body, *attr_texts]
+        page_text = " ".join(part for part in page_text_parts if part)
+        image_urls = list(
+            dict.fromkeys(
+                [
+                    *seed_event.images,
+                    *[
+                        html.unescape(match.group("url"))
+                        for match in DETAIL_IMAGE_RE.finditer(html_content)
+                    ],
+                ]
+            )
+        )
+
+        shipping_type, availability_status = _derive_fulfillment_signals(page_text)
+        detail_payload = {
+            **seed_event.raw_payload,
+            "detail_attributes": attr_texts,
+            "detail_page_excerpt": page_text[:4000],
+        }
+
+        hydrated_at = observed_at or datetime.now(UTC)
+
+        return seed_event.model_copy(
+            update={
+                "event_id": (
+                    f"{seed_event.source_listing_id}:detail:{int(hydrated_at.timestamp())}"
+                ),
+                "observed_at": hydrated_at,
+                "title": detail_title or seed_event.title,
+                "description": detail_body or seed_event.description,
+                "location_text": detail_location or seed_event.location_text,
+                "images": image_urls,
+                "shipping_type": shipping_type or seed_event.shipping_type,
+                "availability_status": availability_status or seed_event.availability_status,
+                "attributes": {
+                    **seed_event.attributes,
+                    "detail_attributes": attr_texts,
+                },
+                "raw_payload": detail_payload,
+            }
+        )
+
 
 def _parse_price(match: re.Match[str] | None) -> float | None:
     if match is None:
@@ -179,6 +264,42 @@ def _parse_location(match: re.Match[str] | None) -> str | None:
         return None
     location = html.unescape(_strip_tags(match.group("location"))).strip()
     return location or None
+
+
+def _extract_first_group(pattern: re.Pattern[str], value: str, group_name: str) -> str | None:
+    match = pattern.search(value)
+    if match is None:
+        return None
+    cleaned = _clean_detail_text(match.group(group_name))
+    return cleaned or None
+
+
+def _split_attrgroup_text(value: str) -> list[str]:
+    parts = re.findall(r"<span[^>]*>(.*?)</span>", value, re.S)
+    if not parts:
+        cleaned = _clean_detail_text(value)
+        return [cleaned] if cleaned else []
+    return [cleaned for part in parts if (cleaned := _clean_detail_text(part))]
+
+
+def _clean_detail_text(value: str) -> str:
+    cleaned = html.unescape(_strip_tags(value))
+    cleaned = cleaned.replace("QR Code Link to This Post", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _derive_fulfillment_signals(page_text: str) -> tuple[str | None, str | None]:
+    normalized = " ".join(page_text.lower().split())
+    if not normalized:
+        return None, None
+    if "pickup only" in normalized or "local pickup only" in normalized:
+        return "pickup_only", "pickup_only"
+    if "delivery available" in normalized or "shipping available" in normalized:
+        return "shipping_available", "delivery_available"
+    if "will ship" in normalized or "ships" in normalized:
+        return "shipping_available", "shipping_available"
+    return None, None
 
 
 def _strip_tags(value: str) -> str:

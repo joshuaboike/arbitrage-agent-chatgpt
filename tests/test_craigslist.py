@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import httpx
+
 from scanner.libs.connectors.craigslist import CraigslistConnector
 from scanner.libs.nlp.lots import LotAnalyzer
 from scanner.libs.nlp.triage import CraigslistDetailGateService, StageZeroTriageService
-from scanner.libs.schemas import FulfillmentStatus, RawListingEvent
+from scanner.libs.schemas import (
+    DetailGateDecision,
+    FulfillmentStatus,
+    LlmTriageDecision,
+    RawListingEvent,
+)
+from scanner.libs.storage.models import TriageResultModel
 from scanner.libs.storage.repositories import ListingRepository, TriageRepository
 from scanner.libs.utils.config import CraigslistAnchor, CraigslistSettings
 
@@ -136,6 +144,52 @@ def test_detail_gate_rejects_pickup_only_and_keeps_shippable() -> None:
     assert accepted.fulfillment_status == FulfillmentStatus.SHIPPABLE
 
 
+def test_craigslist_connector_hydrates_detail_page_signals() -> None:
+    detail_html = """
+    <html>
+      <body>
+        <span id="titletextonly">MacBook Pro 14 M1 Pro</span>
+        <section id="postingbody">
+          QR Code Link to This Post
+          Clean machine, charger included, shipping available.
+        </section>
+        <p class="attrgroup">
+          <span>condition: good</span>
+          <span>delivery available</span>
+        </p>
+        <div class="mapaddress">Brooklyn</div>
+        <img src="https://images.craigslist.org/001.jpg" />
+        <img data-imgsrc="https://images.craigslist.org/002.jpg" />
+      </body>
+    </html>
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=detail_html)
+
+    connector = CraigslistConnector(
+        settings=CraigslistSettings(
+            anchors=(CraigslistAnchor(label="New York", site="newyork", postal_code="10001"),),
+            category="sya",
+            delivery_available=True,
+            search_distance=500,
+            default_query="macbook",
+            request_timeout_seconds=10.0,
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    detailed = connector.hydrate_listing_detail(_build_event(title="MacBook Pro 14"))
+
+    assert detailed.title == "MacBook Pro 14 M1 Pro"
+    assert "shipping available" in (detailed.description or "").lower()
+    assert detailed.location_text == "Brooklyn"
+    assert detailed.shipping_type == "shipping_available"
+    assert detailed.availability_status == "delivery_available"
+    assert len(detailed.images) == 2
+    assert "delivery available" in detailed.attributes["detail_attributes"]
+
+
 def test_lot_analyzer_flags_multi_item_bundles_for_split_valuation() -> None:
     analyzer = LotAnalyzer()
 
@@ -174,3 +228,61 @@ def test_craigslist_cards_persist_with_triage_metadata(test_container) -> None:
         )
 
         assert triage_repository.count_by_source("craigslist") == 1
+
+
+def test_stage_two_detail_gate_save_preserves_llm_triage(test_container) -> None:
+    event = _build_event(
+        title="MacBook Air M1",
+        description="Delivery available.",
+        price=650.0,
+    )
+
+    with test_container.session_scope() as session:
+        listings = ListingRepository(session)
+        triage_repository = TriageRepository(session)
+
+        listing = listings.upsert_event(event)
+        stage_zero = test_container.stage_zero_triage.evaluate(event)
+        lot_analysis = test_container.lot_analyzer.analyze(event)
+        llm_triage = LlmTriageDecision(
+            is_candidate=True,
+            item_type="laptop",
+            brand="Apple",
+            family="MacBook Air",
+            variant_hint="M1",
+            condition_guess="used_good",
+            risk_flags=[],
+            needs_detail_fetch=True,
+            triage_score=0.83,
+            confidence=0.8,
+            reason="Looks like a plausible resale laptop.",
+        )
+        triage_repository.save(
+            listing_pk=listing.listing_pk,
+            stage_zero=stage_zero,
+            lot_analysis=lot_analysis,
+            llm_triage=llm_triage,
+            llm_model="gpt-4o-mini",
+        )
+
+        detail_gate = DetailGateDecision(
+            should_download_photos=True,
+            fulfillment_status=FulfillmentStatus.SHIPPABLE,
+            reasons=["Listing appears shippable."],
+        )
+        triage_repository.save(
+            listing_pk=listing.listing_pk,
+            stage_zero=stage_zero,
+            lot_analysis=lot_analysis,
+            detail_gate=detail_gate,
+        )
+
+        candidates = triage_repository.list_detail_gate_candidates(source="craigslist")
+        assert candidates == []
+
+        refreshed = session.get(TriageResultModel, 1)
+        assert refreshed is not None
+        assert refreshed.llm_triage_json is not None
+        assert refreshed.llm_triage_json["needs_detail_fetch"] is True
+        assert refreshed.detail_gate_json is not None
+        assert refreshed.detail_gate_json["fulfillment_status"] == "SHIPPABLE"

@@ -372,10 +372,12 @@ class TriageRepository:
         else:
             model.stage_zero_json = stage_zero.model_dump(mode="json")
             model.lot_analysis_json = lot_analysis.model_dump(mode="json")
-            model.detail_gate_json = detail_gate.model_dump(mode="json") if detail_gate else None
-            model.llm_triage_json = llm_triage.model_dump(mode="json") if llm_triage else None
-            model.llm_model = llm_model
-            model.llm_reviewed_at = datetime.now(UTC) if llm_triage else model.llm_reviewed_at
+            if detail_gate is not None:
+                model.detail_gate_json = detail_gate.model_dump(mode="json")
+            if llm_triage is not None:
+                model.llm_triage_json = llm_triage.model_dump(mode="json")
+                model.llm_model = llm_model
+                model.llm_reviewed_at = datetime.now(UTC)
 
         self.session.flush()
         return model
@@ -423,3 +425,30 @@ class TriageRepository:
                 if model.llm_triage_json is not None
             ]
         )
+
+    def list_detail_gate_candidates(
+        self,
+        *,
+        source: str,
+        limit: int | None = None,
+    ) -> list[tuple[ListingModel, TriageResultModel]]:
+        query = (
+            select(ListingModel, TriageResultModel)
+            .join(TriageResultModel, TriageResultModel.listing_pk == ListingModel.listing_pk)
+            .where(ListingModel.source == source)
+            .order_by(ListingModel.first_seen_at.desc())
+        )
+        rows = self.session.execute(query).all()
+        filtered = []
+        for listing, triage in rows:
+            if triage.stage_zero_json.get("accepted") is not True:
+                continue
+            llm_triage = triage.llm_triage_json or {}
+            if llm_triage.get("needs_detail_fetch") is not True:
+                continue
+            if triage.detail_gate_json is not None:
+                continue
+            filtered.append((listing, triage))
+        if limit is not None:
+            return filtered[:limit]
+        return filtered
