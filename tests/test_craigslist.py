@@ -53,6 +53,53 @@ def test_craigslist_connector_builds_encoded_anchor_searches() -> None:
     assert "query=%28macbook%7Cthinkpad%7C%22mac+mini%22%29+-parts" in searches[0].url
 
 
+def test_craigslist_connector_parses_result_cards_from_static_html() -> None:
+    connector = CraigslistConnector(
+        settings=CraigslistSettings(
+            anchors=(CraigslistAnchor(label="New York", site="newyork", postal_code="10001"),),
+            category="sya",
+            delivery_available=True,
+            search_distance=500,
+            default_query="macbook",
+            request_timeout_seconds=10.0,
+        )
+    )
+    html = """
+    <ol class="cl-static-search-results">
+      <li class="cl-static-search-result" title="MacBook Air 13">
+        <a href="https://newyork.craigslist.org/brk/sys/d/brooklyn-macbook-air-13/7921111111.html">
+          <div class="title">MacBook Air 13</div>
+          <div class="details">
+            <div class="price">$450</div>
+            <div class="location">Brooklyn</div>
+          </div>
+        </a>
+      </li>
+      <li class="cl-static-search-result" title="ThinkPad T14">
+        <a href="https://newyork.craigslist.org/mnh/sys/d/manhattan-thinkpad-t14/7922222222.html">
+          <div class="title">ThinkPad T14</div>
+          <div class="details">
+            <div class="price">$525</div>
+            <div class="location">Manhattan</div>
+          </div>
+        </a>
+      </li>
+    </ol>
+    """
+
+    items = connector.parse_result_cards(
+        html,
+        page_url="https://newyork.craigslist.org/search/sya?delivery_available=1",
+        source_label="New York",
+    )
+
+    assert len(items) == 2
+    assert items[0].source_listing_id == "7921111111"
+    assert items[0].title == "MacBook Air 13"
+    assert items[0].price == 450.0
+    assert items[0].location_text == "Brooklyn"
+
+
 def test_stage_zero_triage_rejects_out_of_scope_or_bad_price() -> None:
     service = StageZeroTriageService()
 
