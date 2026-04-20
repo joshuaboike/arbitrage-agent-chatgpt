@@ -272,6 +272,20 @@ class TriageDecision(BaseSchema):
     reasons: list[str] = Field(default_factory=list)
 
 
+class LlmTriageDecision(BaseSchema):
+    is_candidate: bool
+    item_type: str
+    brand: str | None = None
+    family: str | None = None
+    variant_hint: str | None = None
+    condition_guess: str | None = None
+    risk_flags: list[str] = Field(default_factory=list)
+    needs_detail_fetch: bool
+    triage_score: float
+    confidence: float
+    reason: str
+
+
 class DetailGateDecision(BaseSchema):
     should_download_photos: bool
     fulfillment_status: FulfillmentStatus
@@ -311,6 +325,7 @@ __all__ = [
     "EventType",
     "FulfillmentStatus",
     "IngestTestListingRequest",
+    "LlmTriageDecision",
     "LotAnalysis",
     "LotComponentCandidate",
     "OutcomeRecord",

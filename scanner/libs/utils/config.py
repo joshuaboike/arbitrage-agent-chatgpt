@@ -73,6 +73,8 @@ class AppSettings:
     slack_webhook_url: str | None
     generic_webhook_url: str | None
     openai_api_key: str | None
+    openai_stage1_model: str
+    openai_request_timeout_seconds: float
     telegram_bot_token: str | None
     telegram_chat_id: str | None
 
@@ -90,6 +92,8 @@ class AppSettings:
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL") or None,
             generic_webhook_url=os.getenv("GENERIC_WEBHOOK_URL") or None,
             openai_api_key=os.getenv("OPENAI_API_KEY") or None,
+            openai_stage1_model=os.getenv("OPENAI_STAGE1_MODEL", "gpt-4o-mini"),
+            openai_request_timeout_seconds=_get_float("OPENAI_REQUEST_TIMEOUT_SECONDS", 30.0),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
         )

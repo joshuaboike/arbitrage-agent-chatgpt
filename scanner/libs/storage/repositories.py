@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import desc, select
@@ -11,6 +11,7 @@ from scanner.libs.schemas import (
     AssetTaxonomyRecord,
     CompRecord,
     DetailGateDecision,
+    LlmTriageDecision,
     LotAnalysis,
     OutcomeRecord,
     RawListingEvent,
@@ -351,6 +352,8 @@ class TriageRepository:
         stage_zero: TriageDecision,
         lot_analysis: LotAnalysis,
         detail_gate: DetailGateDecision | None = None,
+        llm_triage: LlmTriageDecision | None = None,
+        llm_model: str | None = None,
     ) -> TriageResultModel:
         model = self.session.scalar(
             select(TriageResultModel).where(TriageResultModel.listing_pk == listing_pk)
@@ -361,12 +364,18 @@ class TriageRepository:
                 stage_zero_json=stage_zero.model_dump(mode="json"),
                 lot_analysis_json=lot_analysis.model_dump(mode="json"),
                 detail_gate_json=detail_gate.model_dump(mode="json") if detail_gate else None,
+                llm_triage_json=llm_triage.model_dump(mode="json") if llm_triage else None,
+                llm_model=llm_model,
+                llm_reviewed_at=datetime.now(UTC) if llm_triage else None,
             )
             self.session.add(model)
         else:
             model.stage_zero_json = stage_zero.model_dump(mode="json")
             model.lot_analysis_json = lot_analysis.model_dump(mode="json")
             model.detail_gate_json = detail_gate.model_dump(mode="json") if detail_gate else None
+            model.llm_triage_json = llm_triage.model_dump(mode="json") if llm_triage else None
+            model.llm_model = llm_model
+            model.llm_reviewed_at = datetime.now(UTC) if llm_triage else model.llm_reviewed_at
 
         self.session.flush()
         return model
@@ -378,3 +387,39 @@ class TriageRepository:
             .where(ListingModel.source == source)
         )
         return len(self.session.scalars(query).all())
+
+    def list_stage_one_candidates(
+        self,
+        *,
+        source: str,
+        limit: int | None = None,
+    ) -> list[tuple[ListingModel, TriageResultModel]]:
+        query = (
+            select(ListingModel, TriageResultModel)
+            .join(TriageResultModel, TriageResultModel.listing_pk == ListingModel.listing_pk)
+            .where(ListingModel.source == source)
+            .order_by(ListingModel.first_seen_at.desc())
+        )
+        rows = self.session.execute(query).all()
+        filtered = [
+            (listing, triage)
+            for listing, triage in rows
+            if triage.stage_zero_json.get("accepted") is True and triage.llm_triage_json is None
+        ]
+        if limit is not None:
+            return filtered[:limit]
+        return filtered
+
+    def count_stage_one_completed(self, source: str) -> int:
+        query = (
+            select(TriageResultModel)
+            .join(ListingModel, ListingModel.listing_pk == TriageResultModel.listing_pk)
+            .where(ListingModel.source == source)
+        )
+        return len(
+            [
+                model
+                for model in self.session.scalars(query).all()
+                if model.llm_triage_json is not None
+            ]
+        )

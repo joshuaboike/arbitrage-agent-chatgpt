@@ -10,11 +10,12 @@ from scanner.libs.events.bus import InMemoryEventBus
 from scanner.libs.metrics.collector import MetricsCollector
 from scanner.libs.nlp.entity_resolution import EntityResolutionService
 from scanner.libs.nlp.lots import LotAnalyzer
+from scanner.libs.nlp.openai_triage import OpenAIStageOneTriageService
 from scanner.libs.nlp.risk import TextRiskService
 from scanner.libs.nlp.triage import CraigslistDetailGateService, StageZeroTriageService
 from scanner.libs.policy.engine import PolicyEngine
 from scanner.libs.services.pipeline import UnderwritingPipeline
-from scanner.libs.storage.database import build_session_factory
+from scanner.libs.storage.database import build_session_factory, ensure_local_schema_compatibility
 from scanner.libs.storage.models import Base
 from scanner.libs.taxonomy.service import TaxonomyService
 from scanner.libs.utils.config import (
@@ -49,6 +50,11 @@ class ApplicationContainer:
         self.stage_zero_triage = StageZeroTriageService()
         self.detail_gate = CraigslistDetailGateService()
         self.lot_analyzer = LotAnalyzer()
+        self.openai_stage_one_triage = OpenAIStageOneTriageService(
+            api_key=self.settings.openai_api_key,
+            model=self.settings.openai_stage1_model,
+            request_timeout_seconds=self.settings.openai_request_timeout_seconds,
+        )
         self.entity_resolution = EntityResolutionService(self.taxonomy_service)
         self.risk_service = TextRiskService()
         self.valuation_service = ValuationService()
@@ -65,6 +71,7 @@ class ApplicationContainer:
         if engine is None:
             raise RuntimeError("Session factory is not bound to a database engine.")
         Base.metadata.create_all(bind=engine)
+        ensure_local_schema_compatibility(engine)
 
     @contextmanager
     def session_scope(self) -> Iterator[Session]:

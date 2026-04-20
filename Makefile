@@ -1,6 +1,6 @@
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-.PHONY: setup test lint run-api run-ingest run-normalize run-underwrite run-alerts run-craigslist-smoke
+.PHONY: setup test lint run-api run-ingest run-normalize run-underwrite run-alerts run-craigslist-smoke run-craigslist-stage1
 
 setup:
 	$(PYTHON) -m pip install -e .[dev]
@@ -28,3 +28,6 @@ run-alerts:
 
 run-craigslist-smoke:
 	$(PYTHON) -m scanner.apps.worker_ingest.craigslist_smoke
+
+run-craigslist-stage1:
+	$(PYTHON) -m scanner.apps.worker_underwrite.craigslist_stage1

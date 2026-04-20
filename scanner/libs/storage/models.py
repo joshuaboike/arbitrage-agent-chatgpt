@@ -122,6 +122,9 @@ class TriageResultModel(Base):
     stage_zero_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     lot_analysis_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     detail_gate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    llm_triage_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    llm_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     triaged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
