@@ -31,6 +31,14 @@ def recent_alerts(current_container: ApplicationContainer = Depends(get_containe
         return [alert.model_dump(mode="json") for alert in alerts]
 
 
+@app.get("/sources/craigslist/searches")
+def craigslist_searches(
+    current_container: ApplicationContainer = Depends(get_container),
+) -> list[dict]:
+    connector = current_container.connector_registry.create("craigslist")
+    return [search.model_dump(mode="json") for search in connector.build_anchor_searches()]
+
+
 @app.get("/sources/ebay/search")
 def search_ebay(
     q: str = Query(..., min_length=2),

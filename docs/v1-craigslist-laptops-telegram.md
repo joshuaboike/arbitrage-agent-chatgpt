@@ -198,6 +198,31 @@ Photo review should look for:
 - blurry or low-information images
 - text/image mismatch
 
+### Stage 3b: Lot and Bundle Split
+
+If a listing appears to contain multiple resalable items, do not treat it as a single-asset listing.
+
+Detect lot signals from:
+
+- title and description words such as `bundle`, `lot`, `plus`, `with`
+- explicit quantity hints such as `2 laptops`
+- multiple distinct device-family matches such as `MacBook Air + Mac mini`
+- photo review showing multiple separate devices
+
+When triggered:
+
+- create component candidates
+- value each candidate separately
+- sum the expected exit values conservatively
+- keep a risk penalty for bundle ambiguity
+
+Example:
+
+- `MacBook Air + Mac mini bundle` should branch into two candidate items
+- `2 ThinkPads for parts` should branch into multiple candidates, then likely be rejected on condition/risk
+
+V1 does not need perfect lot decomposition, but it must avoid silently valuing obvious multi-item bundles as one device.
+
 ## Underwriting
 
 Combine:

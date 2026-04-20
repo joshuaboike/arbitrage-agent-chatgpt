@@ -25,6 +25,44 @@ def _get_csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(part.strip() for part in raw_value.split(",") if part.strip())
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None or raw_value == "":
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True)
+class CraigslistAnchor:
+    label: str
+    site: str
+    postal_code: str
+
+
+def _parse_craigslist_anchors(raw_value: str | None) -> tuple[CraigslistAnchor, ...]:
+    if not raw_value:
+        return (
+            CraigslistAnchor(label="New York", site="newyork", postal_code="10001"),
+            CraigslistAnchor(label="Washington, DC", site="washingtondc", postal_code="20001"),
+            CraigslistAnchor(label="Atlanta", site="atlanta", postal_code="30303"),
+            CraigslistAnchor(label="Chicago", site="chicago", postal_code="60601"),
+            CraigslistAnchor(label="Dallas", site="dallas", postal_code="75201"),
+            CraigslistAnchor(label="Denver", site="denver", postal_code="80202"),
+            CraigslistAnchor(label="Los Angeles", site="losangeles", postal_code="90012"),
+            CraigslistAnchor(label="Seattle", site="seattle", postal_code="98101"),
+        )
+
+    anchors: list[CraigslistAnchor] = []
+    for part in raw_value.split(","):
+        tokens = [token.strip() for token in part.split(":") if token.strip()]
+        if len(tokens) != 3:
+            continue
+        site, postal_code, label = tokens
+        anchors.append(CraigslistAnchor(label=label, site=site, postal_code=postal_code))
+
+    return tuple(anchors)
+
+
 @dataclass(frozen=True)
 class AppSettings:
     app_env: str
@@ -34,6 +72,9 @@ class AppSettings:
     event_bus_topic_prefix: str
     slack_webhook_url: str | None
     generic_webhook_url: str | None
+    openai_api_key: str | None
+    telegram_bot_token: str | None
+    telegram_chat_id: str | None
 
     @classmethod
     def from_env(cls) -> AppSettings:
@@ -48,6 +89,36 @@ class AppSettings:
             event_bus_topic_prefix=os.getenv("EVENT_BUS_TOPIC_PREFIX", "scanner"),
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL") or None,
             generic_webhook_url=os.getenv("GENERIC_WEBHOOK_URL") or None,
+            openai_api_key=os.getenv("OPENAI_API_KEY") or None,
+            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
+            telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
+        )
+
+
+@dataclass(frozen=True)
+class CraigslistSettings:
+    anchors: tuple[CraigslistAnchor, ...]
+    category: str
+    delivery_available: bool
+    search_distance: int
+    default_query: str
+    request_timeout_seconds: float
+
+    @classmethod
+    def from_env(cls) -> CraigslistSettings:
+        return cls(
+            anchors=_parse_craigslist_anchors(os.getenv("CRAIGSLIST_ANCHORS")),
+            category=os.getenv("CRAIGSLIST_CATEGORY", "sya"),
+            delivery_available=_get_bool("CRAIGSLIST_DELIVERY_AVAILABLE", True),
+            search_distance=_get_int("CRAIGSLIST_SEARCH_DISTANCE", 500),
+            default_query=os.getenv(
+                "CRAIGSLIST_QUERY",
+                (
+                    '(macbook|thinkpad|xps|latitude|"surface laptop"|elitebook|'
+                    'zenbook|spectre|"mac mini") -parts -repair -broken -wanted -service'
+                ),
+            ),
+            request_timeout_seconds=_get_float("CRAIGSLIST_REQUEST_TIMEOUT_SECONDS", 10.0),
         )
 
 

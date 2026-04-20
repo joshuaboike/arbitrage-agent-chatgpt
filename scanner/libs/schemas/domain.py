@@ -20,6 +20,12 @@ class ActionRoute(StrEnum):
     PRIORITY_ALERT = "PRIORITY_ALERT"
 
 
+class FulfillmentStatus(StrEnum):
+    SHIPPABLE = "SHIPPABLE"
+    PICKUP_ONLY = "PICKUP_ONLY"
+    UNKNOWN = "UNKNOWN"
+
+
 class BaseSchema(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -247,6 +253,48 @@ class IngestTestListingRequest(BaseSchema):
     attributes: dict[str, Any] = Field(default_factory=dict)
 
 
+class CraigslistSearchDefinition(BaseSchema):
+    label: str
+    site: str
+    postal_code: str
+    search_distance: int
+    category: str
+    delivery_available: bool = True
+    query: str
+    url: str
+
+
+class TriageDecision(BaseSchema):
+    accepted: bool
+    stage: str = "stage0"
+    normalized_title: str | None = None
+    reject_reason: str | None = None
+    reasons: list[str] = Field(default_factory=list)
+
+
+class DetailGateDecision(BaseSchema):
+    should_download_photos: bool
+    fulfillment_status: FulfillmentStatus
+    exclusion_reason: str | None = None
+    reasons: list[str] = Field(default_factory=list)
+
+
+class LotComponentCandidate(BaseSchema):
+    item_type: str
+    label: str
+    quantity_hint: int = 1
+    confidence: float
+    reasons: list[str] = Field(default_factory=list)
+
+
+class LotAnalysis(BaseSchema):
+    is_multi_item: bool
+    should_split_valuation: bool
+    confidence: float
+    reasons: list[str] = Field(default_factory=list)
+    component_candidates: list[LotComponentCandidate] = Field(default_factory=list)
+
+
 __all__ = [
     "ActionRoute",
     "AlertPayload",
@@ -257,12 +305,18 @@ __all__ = [
     "CompRecord",
     "ConditionRisk",
     "CostBreakdown",
+    "CraigslistSearchDefinition",
+    "DetailGateDecision",
     "EventEnvelope",
     "EventType",
+    "FulfillmentStatus",
     "IngestTestListingRequest",
+    "LotAnalysis",
+    "LotComponentCandidate",
     "OutcomeRecord",
     "RawListingEvent",
     "RecentAlertView",
+    "TriageDecision",
     "UnderwritingResult",
     "ValuationEstimate",
 ]

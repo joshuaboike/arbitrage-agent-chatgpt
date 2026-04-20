@@ -7,7 +7,9 @@
 The system is optimized for captureable expected value rather than raw spread. v1 focuses on:
 
 - source ingestion through a pluggable connector abstraction
+- Craigslist anchor-search generation for overlapping metros
 - canonical `RawListingEvent` normalization
+- deterministic triage and detail-page fulfillment gating
 - rule-based entity resolution into seeded asset families and assets
 - text-first condition and fraud heuristics
 - baseline valuation using exact and family-level comps
@@ -68,6 +70,12 @@ alembic upgrade head
 make run-api
 ```
 
+6. Preview the generated Craigslist anchor searches:
+
+```bash
+curl "http://127.0.0.1:8000/sources/craigslist/searches"
+```
+
 ## eBay connector setup
 
 The eBay connector now supports a real Browse read path. Configure either:
@@ -97,6 +105,7 @@ EBAY_QUERY="macbook pro 14" make run-ingest
 
 - `GET /health`
 - `GET /alerts/recent`
+- `GET /sources/craigslist/searches`
 - `GET /sources/ebay/search`
 - `GET /listings/{listing_id}`
 - `GET /underwriting/{listing_id}`

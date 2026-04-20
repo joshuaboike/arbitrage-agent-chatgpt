@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from scanner.libs.connectors.craigslist import CraigslistConnector
 from scanner.libs.connectors.ebay import (
     EbayBrowseProvider,
     EbayConnector,
     HttpEbayBrowseProvider,
     UnavailableEbayBrowseProvider,
 )
-from scanner.libs.utils.config import EbaySettings
+from scanner.libs.utils.config import CraigslistSettings, EbaySettings
 
 ConnectorBuilder = Callable[[], object]
 
@@ -31,8 +32,13 @@ def build_default_registry(
     *,
     ebay_provider: EbayBrowseProvider | None = None,
     ebay_settings: EbaySettings,
+    craigslist_settings: CraigslistSettings,
 ) -> ConnectorRegistry:
     registry = ConnectorRegistry()
+    registry.register(
+        "craigslist",
+        lambda: CraigslistConnector(settings=craigslist_settings),
+    )
     registry.register(
         "ebay",
         lambda: EbayConnector(
