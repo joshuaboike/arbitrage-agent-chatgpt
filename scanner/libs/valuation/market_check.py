@@ -14,15 +14,37 @@ from scanner.libs.schemas import (
 )
 
 TITLE_STOPWORDS = {
-    "apple",
-    "lenovo",
     "the",
     "with",
     "for",
     "and",
-    "inch",
-    "in",
     "computer",
+    "laptop",
+    "sale",
+    "excellent",
+    "condition",
+}
+RELEVANT_NUMERIC_TOKENS = {
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "24",
+    "32",
+    "36",
+    "40",
+    "48",
+    "64",
+    "96",
+    "128",
+    "256",
+    "512",
+    "1024",
+    "2048",
 }
 
 
@@ -37,14 +59,18 @@ class EbayMarketCheckService:
         candidate: CanonicalAssetCandidate,
         photo_review: PhotoReviewResult,
     ) -> MarketCheckResult:
-        query = self.build_query(event=event, candidate=candidate)
+        query = self.build_query(
+            event=event,
+            candidate=candidate,
+            photo_review=photo_review,
+        )
         page = self.connector.search(query=query, hydrate_details=False)
 
         matched: list[tuple[float, RawListingEvent]] = []
         for comparable in page.items:
             score = self._title_match_score(
-                candidate=candidate,
                 source_event=event,
+                photo_review=photo_review,
                 comparable_event=comparable,
             )
             if score >= 0.35:
@@ -80,17 +106,20 @@ class EbayMarketCheckService:
         high = round(max(prices), 2) if prices else None
         fast_sale = self._fast_sale_estimate(prices)
 
-        confidence = 0.28
-        confidence += min(candidate.confidence * 0.25, 0.25)
-        confidence += 0.18 if len(comparable_items) >= 5 else 0.12 if comparable_items else 0.0
+        confidence = 0.25
+        if photo_review.extracted_facts.model_text:
+            confidence += 0.16
+        elif candidate.model:
+            confidence += 0.08
         if comparable_items:
+            confidence += 0.18 if len(comparable_items) >= 5 else 0.1
             confidence += min(
                 sum(item.title_match_score for item in comparable_items[:5])
                 / min(len(comparable_items), 5)
-                * 0.25,
-                0.25,
+                * 0.28,
+                0.28,
             )
-        confidence = min(confidence, photo_review.confidence + 0.15, 0.92)
+        confidence = min(confidence, photo_review.confidence + 0.18, 0.92)
 
         if not comparable_items:
             reasons.append("No close active eBay matches cleared the title-similarity threshold.")
@@ -115,26 +144,47 @@ class EbayMarketCheckService:
         *,
         event: RawListingEvent,
         candidate: CanonicalAssetCandidate,
+        photo_review: PhotoReviewResult,
     ) -> str:
-        source_text = normalize_text(event.title, event.description, event.model_text, event.brand)
-        title_query = _clean_title_for_query(event.title or "")
-        parts: list[str] = [title_query] if title_query else []
+        extracted = photo_review.extracted_facts
+        parts: list[str] = []
 
-        for part in (candidate.brand, candidate.model, candidate.specs.cpu):
-            if part and _phrase_supported_in_source(part, source_text):
-                parts.append(part)
+        if extracted.model_text:
+            parts.append(_clean_title_for_query(extracted.model_text))
+        else:
+            title_query = _clean_title_for_query(event.title or "")
+            if title_query:
+                parts.append(title_query)
 
-        if candidate.specs.ram_gb and f"{candidate.specs.ram_gb}gb" in source_text:
+        if extracted.cpu and extracted.cpu.lower() not in normalize_text(*parts):
+            parts.append(extracted.cpu)
+        if extracted.ram_gb:
+            parts.append(f"{extracted.ram_gb}GB")
+        elif candidate.specs.ram_gb and _value_supported_in_source(
+            f"{candidate.specs.ram_gb}gb",
+            event=event,
+            photo_review=photo_review,
+        ):
             parts.append(f"{candidate.specs.ram_gb}GB")
-        if candidate.specs.storage_gb:
-            storage = candidate.specs.storage_gb
-            storage_text = (
-                f"{storage // 1024}TB"
-                if storage >= 1024 and storage % 1024 == 0
-                else f"{storage}GB"
+
+        storage_text = _storage_text(
+            extracted.storage_gb or (
+                candidate.specs.storage_gb
+                if _storage_supported_in_source(
+                    candidate.specs.storage_gb,
+                    event=event,
+                    photo_review=photo_review,
+                )
+                else None
             )
-            if storage_text.lower() in source_text:
-                parts.append(storage_text)
+        )
+        if storage_text:
+            parts.append(storage_text)
+
+        if extracted.brand and extracted.brand.lower() not in normalize_text(*parts):
+            parts.insert(0, extracted.brand)
+        elif candidate.brand and candidate.brand.lower() not in normalize_text(*parts):
+            parts.insert(0, candidate.brand)
 
         cleaned_parts = [part.strip() for part in parts if part and part.strip()]
         return " ".join(dict.fromkeys(cleaned_parts)).strip() or (event.title or "laptop")
@@ -142,36 +192,50 @@ class EbayMarketCheckService:
     def _title_match_score(
         self,
         *,
-        candidate: CanonicalAssetCandidate,
         source_event: RawListingEvent,
+        photo_review: PhotoReviewResult,
         comparable_event: RawListingEvent,
     ) -> float:
-        source_text = normalize_text(source_event.title, source_event.description)
-        if candidate.model and _phrase_supported_in_source(candidate.model, source_text):
-            source_text = normalize_text(source_text, candidate.model)
-        if candidate.brand and _phrase_supported_in_source(candidate.brand, source_text):
-            source_text = normalize_text(source_text, candidate.brand)
+        extracted = photo_review.extracted_facts
+        source_text = normalize_text(
+            source_event.title,
+            extracted.model_text,
+            extracted.family,
+            extracted.brand,
+            extracted.cpu,
+            f"{extracted.ram_gb}gb" if extracted.ram_gb else None,
+            _storage_text(extracted.storage_gb),
+            extracted.screen_size,
+            str(extracted.year) if extracted.year else None,
+        )
         comparable_text = normalize_text(comparable_event.title, comparable_event.description)
 
         source_tokens = {
             token
-            for token in source_text.split()
-            if len(token) > 2 and token not in TITLE_STOPWORDS
+            for token in re.findall(r"[a-z0-9]+", source_text)
+            if _use_token_for_matching(token)
         }
         comparable_tokens = {
             token
-            for token in comparable_text.split()
-            if len(token) > 2 and token not in TITLE_STOPWORDS
+            for token in re.findall(r"[a-z0-9]+", comparable_text)
+            if _use_token_for_matching(token)
         }
         if not source_tokens or not comparable_tokens:
             return 0.0
 
         overlap = len(source_tokens & comparable_tokens)
         score = overlap / len(source_tokens)
-        if candidate.model and normalize_text(candidate.model) in comparable_text:
+        if extracted.model_text and normalize_text(extracted.model_text) in comparable_text:
             score += 0.2
-        if candidate.brand and normalize_text(candidate.brand) in comparable_text:
-            score += 0.1
+        elif source_event.title and normalize_text(source_event.title) in comparable_text:
+            score += 0.12
+        if extracted.cpu and normalize_text(extracted.cpu) in comparable_text:
+            score += 0.08
+        if extracted.ram_gb and normalize_text(f"{extracted.ram_gb}gb") in comparable_text:
+            score += 0.05
+        storage_hint = _storage_text(extracted.storage_gb)
+        if storage_hint and normalize_text(storage_hint) in comparable_text:
+            score += 0.05
         return min(score, 1.0)
 
     def _fast_sale_estimate(self, prices: list[float]) -> float | None:
@@ -190,19 +254,79 @@ def _clean_title_for_query(title: str) -> str:
         lowered = token.lower()
         if lowered in TITLE_STOPWORDS:
             continue
-        if re.fullmatch(r"\d+(?:\.\d+)?", token):
+        if lowered.isdigit() and lowered not in RELEVANT_NUMERIC_TOKENS:
             continue
         cleaned.append(token)
-    return " ".join(cleaned[:10]).strip()
+    return " ".join(cleaned[:12]).strip()
 
 
-def _phrase_supported_in_source(phrase: str, source_text: str) -> bool:
-    normalized_phrase = normalize_text(phrase)
-    if normalized_phrase in source_text:
-        return True
-    phrase_tokens = {token for token in normalized_phrase.split() if len(token) > 2}
-    source_tokens = {token for token in source_text.split() if len(token) > 2}
-    if not phrase_tokens:
+def _use_token_for_matching(token: str) -> bool:
+    if token in TITLE_STOPWORDS:
         return False
-    overlap = len(phrase_tokens & source_tokens)
-    return overlap / len(phrase_tokens) >= 0.6
+    if len(token) > 2:
+        return True
+    return token in RELEVANT_NUMERIC_TOKENS
+
+
+def _storage_text(storage_gb: int | None) -> str | None:
+    if not storage_gb:
+        return None
+    if storage_gb >= 1024 and storage_gb % 1024 == 0:
+        return f"{storage_gb // 1024}TB"
+    return f"{storage_gb}GB"
+
+
+def _value_supported_in_source(
+    value: str | None,
+    *,
+    event: RawListingEvent,
+    photo_review: PhotoReviewResult,
+) -> bool:
+    if not value:
+        return False
+    source_text = normalize_text(
+        event.title,
+        event.description,
+        photo_review.extracted_facts.ocr_text,
+        photo_review.extracted_facts.model_text,
+    )
+    return normalize_text(value) in source_text
+
+
+def _storage_supported_in_source(
+    storage_gb: int | None,
+    *,
+    event: RawListingEvent,
+    photo_review: PhotoReviewResult,
+) -> bool:
+    if not storage_gb:
+        return False
+
+    storage_text = _storage_text(storage_gb)
+    if _value_supported_in_source(storage_text, event=event, photo_review=photo_review):
+        return True
+
+    raw_text = " ".join(
+        part
+        for part in [
+            event.title or "",
+            event.description or "",
+            photo_review.extracted_facts.ocr_text or "",
+            photo_review.extracted_facts.model_text or "",
+        ]
+        if part
+    ).lower()
+
+    if storage_gb >= 1024 and storage_gb % 1024 == 0:
+        tb_value = storage_gb / 1024
+        for match in re.finditer(r"(\d+(?:\.\d+)?)\s*tb\b", raw_text):
+            observed_tb = float(match.group(1))
+            if abs(observed_tb - tb_value) <= 0.15:
+                return True
+
+    for match in re.finditer(r"(\d{3,4})\s*gb\b", raw_text):
+        observed_gb = int(match.group(1))
+        if abs(observed_gb - storage_gb) <= 32:
+            return True
+
+    return False

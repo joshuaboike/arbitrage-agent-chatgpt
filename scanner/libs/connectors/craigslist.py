@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from datetime import UTC, datetime
 from urllib.parse import urlencode, urljoin
@@ -21,6 +22,10 @@ DETAIL_BODY_RE = re.compile(r'<section id="postingbody"[^>]*>(?P<body>.*?)</sect
 DETAIL_ATTRGROUP_RE = re.compile(r'<p class="attrgroup"[^>]*>(?P<body>.*?)</p>', re.S)
 DETAIL_IMAGE_RE = re.compile(r'(?:src|data-imgsrc)="(?P<url>https?://[^"]+)"')
 DETAIL_MAPADDRESS_RE = re.compile(r'<div class="mapaddress">(?P<location>.*?)</div>', re.S)
+DETAIL_LD_POSTING_RE = re.compile(
+    r'<script type="application/ld\+json" id="ld_posting_data"\s*>(?P<body>.*?)</script>',
+    re.S,
+)
 
 
 class CraigslistConnector:
@@ -203,6 +208,7 @@ class CraigslistConnector:
             for cleaned in _split_attrgroup_text(match.group("body"))
             if cleaned
         ]
+        ld_posting_data = _extract_ld_posting_data(html_content)
         page_text_parts = [detail_body, *attr_texts]
         page_text = " ".join(part for part in page_text_parts if part)
         image_urls = list(
@@ -211,6 +217,7 @@ class CraigslistConnector:
                     image_url
                     for image_url in [
                         *seed_event.images,
+                        *ld_posting_data.get("image_urls", []),
                         *[
                             html.unescape(match.group("url"))
                             for match in DETAIL_IMAGE_RE.finditer(html_content)
@@ -226,6 +233,7 @@ class CraigslistConnector:
             **seed_event.raw_payload,
             "detail_attributes": attr_texts,
             "detail_page_excerpt": page_text[:4000],
+            "ld_posting_data": ld_posting_data.get("raw"),
         }
 
         hydrated_at = observed_at or datetime.now(UTC)
@@ -245,6 +253,7 @@ class CraigslistConnector:
                 "attributes": {
                     **seed_event.attributes,
                     "detail_attributes": attr_texts,
+                    "detail_image_count": len(image_urls),
                 },
                 "raw_payload": detail_payload,
             }
@@ -293,6 +302,31 @@ def _clean_detail_text(value: str) -> str:
     cleaned = cleaned.replace("QR Code Link to This Post", " ")
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
+
+
+def _extract_ld_posting_data(html_content: str) -> dict[str, object]:
+    match = DETAIL_LD_POSTING_RE.search(html_content)
+    if match is None:
+        return {"image_urls": [], "raw": None}
+
+    body = html.unescape(match.group("body")).strip()
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return {"image_urls": [], "raw": body[:4000]}
+
+    raw_images = payload.get("image", [])
+    if isinstance(raw_images, str):
+        image_urls = [raw_images]
+    elif isinstance(raw_images, list):
+        image_urls = [item for item in raw_images if isinstance(item, str)]
+    else:
+        image_urls = []
+
+    return {
+        "image_urls": image_urls,
+        "raw": payload,
+    }
 
 
 def _derive_fulfillment_signals(page_text: str) -> tuple[str | None, str | None]:

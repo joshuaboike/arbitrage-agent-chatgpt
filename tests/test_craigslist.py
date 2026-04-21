@@ -186,6 +186,18 @@ def test_craigslist_connector_hydrates_detail_page_signals() -> None:
     <html>
       <body>
         <span id="titletextonly">MacBook Pro 14 M1 Pro</span>
+        <script type="application/ld+json" id="ld_posting_data">
+          {
+            "@type": "Product",
+            "image": [
+              "https://images.craigslist.org/001.jpg",
+              "https://images.craigslist.org/002.jpg",
+              "https://images.craigslist.org/003.jpg",
+              "https://images.craigslist.org/004.jpg",
+              "https://images.craigslist.org/005.jpg"
+            ]
+          }
+        </script>
         <section id="postingbody">
           QR Code Link to This Post
           Clean machine, charger included, shipping available.
@@ -225,9 +237,10 @@ def test_craigslist_connector_hydrates_detail_page_signals() -> None:
     assert detailed.location_text == "Brooklyn"
     assert detailed.shipping_type == "shipping_available"
     assert detailed.availability_status == "delivery_available"
-    assert len(detailed.images) == 2
+    assert len(detailed.images) == 5
     assert "test.js" not in "".join(detailed.images)
     assert "50x50c" not in "".join(detailed.images)
+    assert "005.jpg" in "".join(detailed.images)
     assert "delivery available" in detailed.attributes["detail_attributes"]
 
 

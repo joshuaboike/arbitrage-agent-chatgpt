@@ -22,12 +22,16 @@ def _photo_service_from_env() -> PhotoReviewService:
     max_images = int(os.getenv("PHOTO_MAX_IMAGES", "10"))
     max_bytes = int(os.getenv("PHOTO_MAX_BYTES", "5000000"))
     timeout = float(os.getenv("PHOTO_DOWNLOAD_TIMEOUT_SECONDS", "20"))
+    openai_api_key = os.getenv("OPENAI_API_KEY") or None
+    openai_model = os.getenv("OPENAI_STAGE3_MODEL", "gpt-4.1-mini")
     return PhotoReviewService(
         cache_dir=cache_dir,
         review_cache_dir=review_cache_dir,
         max_images=max_images,
         max_bytes=max_bytes,
         request_timeout_seconds=timeout,
+        openai_api_key=openai_api_key,
+        openai_model=openai_model,
     )
 
 

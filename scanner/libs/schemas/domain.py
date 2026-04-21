@@ -293,6 +293,22 @@ class DetailGateDecision(BaseSchema):
     reasons: list[str] = Field(default_factory=list)
 
 
+class PhotoExtractedFacts(BaseSchema):
+    brand: str | None = None
+    family: str | None = None
+    model_text: str | None = None
+    cpu: str | None = None
+    ram_gb: int | None = None
+    storage_gb: int | None = None
+    screen_size: str | None = None
+    year: int | None = None
+    battery_cycles: int | None = None
+    battery_health_percent: int | None = None
+    applecare_until: str | None = None
+    ocr_text: str | None = None
+    evidence_notes: list[str] = Field(default_factory=list)
+
+
 class PhotoReviewResult(BaseSchema):
     review_strategy: str = "metadata_first"
     downloaded_photo_count: int
@@ -307,6 +323,7 @@ class PhotoReviewResult(BaseSchema):
     confidence: float = 0.0
     image_hashes: list[str] = Field(default_factory=list)
     local_paths: list[str] = Field(default_factory=list)
+    extracted_facts: PhotoExtractedFacts = Field(default_factory=PhotoExtractedFacts)
     reasons: list[str] = Field(default_factory=list)
 
 

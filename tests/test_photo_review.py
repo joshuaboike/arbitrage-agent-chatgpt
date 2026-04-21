@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 
 import httpx
 
@@ -9,6 +10,7 @@ from scanner.libs.schemas import (
     EventType,
     FulfillmentStatus,
     LlmTriageDecision,
+    PhotoExtractedFacts,
     PhotoReviewResult,
     RawListingEvent,
 )
@@ -91,6 +93,72 @@ def test_photo_review_service_downloads_and_caches_reviews(tmp_path) -> None:
     skipped_static = service.download_photo("https://www.example.com/static.js")
     assert skipped_thumb is None
     assert skipped_static is None
+
+
+def test_photo_review_service_extracts_image_evidence_with_openai(tmp_path) -> None:
+    image_payload = {
+        "output_text": json.dumps(
+            {
+                "photo_quality_score": 0.86,
+                "device_visibility_score": 0.9,
+                "damage_flags": [],
+                "accessory_flags": ["charger_included", "original_box"],
+                "fraud_flags": [],
+                "mismatch_flags": [],
+                "condition_band": "B",
+                "confidence": 0.87,
+                "extracted_facts": {
+                    "brand": "Apple",
+                    "family": "MacBook Pro",
+                    "model_text": "MacBook Pro 16-inch M3 Max",
+                    "cpu": "M3 Max",
+                    "ram_gb": 64,
+                    "storage_gb": 1024,
+                    "screen_size": "16",
+                    "year": 2023,
+                    "battery_cycles": 16,
+                    "battery_health_percent": 100,
+                    "applecare_until": "Jan 12, 2027",
+                    "ocr_text": (
+                        "MacBook Pro 16-inch M3 Max 64 GB 1 TB Battery cycles: 16 "
+                        "AppleCare until Jan 12, 2027"
+                    ),
+                    "evidence_notes": [
+                        "About This Mac screenshot confirms the exact model and specs."
+                    ],
+                },
+                "reasons": ["Read all provided screenshots and product photos."],
+            }
+        )
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://api.openai.com/v1/responses":
+            return httpx.Response(200, json=image_payload)
+        return httpx.Response(
+            200,
+            content=PNG_BYTES,
+            headers={"content-type": "image/png"},
+        )
+
+    service = PhotoReviewService(
+        cache_dir=tmp_path / "images",
+        review_cache_dir=tmp_path / "reviews",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        openai_api_key="test-key",
+        openai_model="gpt-4.1-mini",
+    )
+
+    photo = service.download_photo("https://images.craigslist.org/one_600x450.png")
+    assert photo is not None
+
+    review = service.review([photo])
+
+    assert review.review_strategy == "metadata_plus_openai_vision"
+    assert review.extracted_facts.model_text == "MacBook Pro 16-inch M3 Max"
+    assert review.extracted_facts.battery_cycles == 16
+    assert "charger_included" in review.accessory_flags
+    assert review.confidence >= 0.8
 
 
 def test_listing_repository_updates_image_metadata(test_container) -> None:
@@ -181,6 +249,7 @@ def test_triage_repository_lists_photo_review_candidates(test_container) -> None
             confidence=0.25,
             image_hashes=["abc123"],
             local_paths=["/tmp/photo.png"],
+            extracted_facts=PhotoExtractedFacts(),
             reasons=["Reviewed one photo."],
         )
         triage_repository.save(

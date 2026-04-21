@@ -4,7 +4,7 @@ import json
 import os
 
 from scanner.libs.connectors.ebay import EbayConnector
-from scanner.libs.schemas import LotAnalysis, PhotoReviewResult, TriageDecision
+from scanner.libs.schemas import LlmTriageDecision, LotAnalysis, PhotoReviewResult, TriageDecision
 from scanner.libs.services.container import ApplicationContainer
 from scanner.libs.storage.repositories import ListingRepository, TriageRepository
 from scanner.libs.utils.logging import get_logger
@@ -45,8 +45,17 @@ def run_once(*, limit: int | None = None) -> dict:
             if event is None:
                 continue
 
-            canonical_asset = container.entity_resolution.resolve(event)
             photo_review = PhotoReviewResult.model_validate(triage_row.photo_review_json)
+            llm_triage = (
+                LlmTriageDecision.model_validate(triage_row.llm_triage_json)
+                if triage_row.llm_triage_json
+                else None
+            )
+            canonical_asset = container.entity_resolution.resolve(
+                event,
+                photo_review=photo_review,
+                llm_triage=llm_triage,
+            )
             market_check = service.run(
                 event=event,
                 candidate=canonical_asset,

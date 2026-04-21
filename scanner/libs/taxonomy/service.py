@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 
 from scanner.libs.schemas import AssetTaxonomyRecord
@@ -27,19 +28,37 @@ class TaxonomyService:
     ) -> AssetTaxonomyRecord | None:
         normalized_brand = (brand or "").lower()
         normalized_model = (model or "").lower()
+        model_tokens = {
+            token for token in re.findall(r"[a-z0-9]+", normalized_model) if len(token) > 1
+        }
         candidates: list[tuple[int, AssetTaxonomyRecord]] = []
 
+        if not normalized_brand or not normalized_model:
+            return None
+
         for asset in self._assets:
+            if asset.brand.lower() != normalized_brand:
+                continue
             score = 0
-            if asset.brand.lower() == normalized_brand and normalized_brand:
-                score += 30
-            if asset.model.lower() == normalized_model and normalized_model:
-                score += 40
+            asset_model = asset.model.lower()
+            asset_tokens = {
+                token for token in re.findall(r"[a-z0-9]+", asset_model) if len(token) > 1
+            }
+
+            if asset_model == normalized_model:
+                score += 70
+            elif model_tokens:
+                overlap = len(model_tokens & asset_tokens) / len(model_tokens)
+                if overlap >= 0.8:
+                    score += 35
+                elif overlap >= 0.6:
+                    score += 20
+
             if storage_gb and asset.spec_json.get("storage_gb") == storage_gb:
                 score += 20
             if ram_gb and asset.spec_json.get("ram_gb") == ram_gb:
                 score += 10
-            if score:
+            if score >= 60:
                 candidates.append((score, asset))
 
         if not candidates:

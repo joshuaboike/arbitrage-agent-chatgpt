@@ -6,6 +6,7 @@ from scanner.libs.schemas import (
     EventType,
     FulfillmentStatus,
     LlmTriageDecision,
+    PhotoExtractedFacts,
     PhotoReviewResult,
     RawListingEvent,
 )
@@ -75,6 +76,14 @@ def test_market_check_service_builds_query_and_summarizes_matches(test_container
         device_visibility_score=0.9,
         confidence=0.8,
         condition_band="B/C",
+        extracted_facts=PhotoExtractedFacts(
+            brand="Apple",
+            family="MacBook Pro",
+            model_text="MacBook Pro 14 M1 Pro",
+            cpu="M1 Pro",
+            ram_gb=16,
+            storage_gb=1024,
+        ),
     )
 
     fake_connector = FakeEbayConnector(
@@ -116,6 +125,117 @@ def test_market_check_service_builds_query_and_summarizes_matches(test_container
     assert all("Dell XPS" not in title for title in result.comparable_titles)
 
 
+def test_market_check_prefers_extracted_image_identity_over_seeded_taxonomy(test_container) -> None:
+    event = RawListingEvent(
+        event_id="evt-cl-2",
+        source="craigslist",
+        source_listing_id="cl-2",
+        event_type=EventType.CREATE,
+        observed_at="2026-04-20T12:00:00Z",
+        listing_url="https://example.com/craigslist/2",
+        title="Apple MacBook Pro Model: 16-inch Pro M3 Max",
+        description="64 GB RAM, 1 TB storage, AppleCare until Jan 12, 2027.",
+        price=600.0,
+        currency="USD",
+        images=["https://images.craigslist.org/one_600x450.jpg"],
+        attributes={"search_delivery_filter_applied": True},
+    )
+    photo_review = PhotoReviewResult(
+        downloaded_photo_count=5,
+        unique_photo_count=5,
+        photo_quality_score=0.95,
+        device_visibility_score=0.95,
+        confidence=0.9,
+        condition_band="B",
+        extracted_facts=PhotoExtractedFacts(
+            brand="Apple",
+            family="MacBook Pro",
+            model_text="MacBook Pro 16-inch M3 Max",
+            cpu="M3 Max",
+            ram_gb=64,
+            storage_gb=1024,
+            battery_cycles=16,
+        ),
+    )
+    candidate = test_container.entity_resolution.resolve(event, photo_review=photo_review)
+    service = EbayMarketCheckService(FakeEbayConnector([]))  # type: ignore[arg-type]
+
+    query = service.build_query(
+        event=event,
+        candidate=candidate,
+        photo_review=photo_review,
+    )
+
+    assert "MacBook Pro 16 inch M3 Max" in query
+    assert "MacBook Pro 14" not in query
+    assert "M1 Pro" not in query
+    assert "1TB" in query
+
+
+def test_market_check_retains_close_matches_even_with_noisy_image_ocr(test_container) -> None:
+    event = RawListingEvent(
+        event_id="evt-cl-3",
+        source="craigslist",
+        source_listing_id="cl-3",
+        event_type=EventType.CREATE,
+        observed_at="2026-04-20T12:00:00Z",
+        listing_url="https://example.com/craigslist/3",
+        title="Apple MacBook Pro Model: 14-inch Pro M3 Max",
+        description="64 GB RAM, 1.1 TB storage, AppleCare until Jan 12, 2027.",
+        price=600.0,
+        currency="USD",
+        images=["https://images.craigslist.org/one_600x450.jpg"],
+        attributes={"search_delivery_filter_applied": True},
+    )
+    photo_review = PhotoReviewResult(
+        downloaded_photo_count=5,
+        unique_photo_count=5,
+        photo_quality_score=0.95,
+        device_visibility_score=0.95,
+        confidence=0.9,
+        condition_band="B",
+        extracted_facts=PhotoExtractedFacts(
+            brand="Apple",
+            family="MacBook Pro",
+            model_text="MacBook Pro 14-inch 2023",
+            cpu="M3 Max",
+            ram_gb=64,
+            screen_size="14-inch",
+            year=2023,
+            ocr_text=(
+                "Model Information Serial Number Battery cycles 16 AppleCare until Jan 12, 2027"
+            ),
+        ),
+    )
+    candidate = test_container.entity_resolution.resolve(event, photo_review=photo_review)
+    fake_connector = FakeEbayConnector(
+        [
+            _build_ebay_item(
+                "eb-1",
+                "Apple MacBook Pro 14-inch 2023 M3 Max 16-Core Laptop 2TB SSD, 64GB RAM, A2992",
+                2599.0,
+                0.0,
+            ),
+            _build_ebay_item(
+                "eb-2",
+                "Apple MacBook Pro 16-inch 2023 M3 Max 1TB 48GB",
+                2399.0,
+                0.0,
+            ),
+        ]
+    )
+    service = EbayMarketCheckService(fake_connector)  # type: ignore[arg-type]
+
+    result = service.run(
+        event=event,
+        candidate=candidate,
+        photo_review=photo_review,
+    )
+
+    assert result.match_count >= 1
+    assert any("14-inch 2023 M3 Max" in title for title in result.comparable_titles)
+
+
 def test_triage_repository_lists_market_check_candidates(test_container) -> None:
     with test_container.session_scope() as session:
         listing_repository = ListingRepository(session)
@@ -149,6 +269,14 @@ def test_triage_repository_lists_market_check_candidates(test_container) -> None
             device_visibility_score=0.9,
             confidence=0.8,
             condition_band="B/C",
+            extracted_facts=PhotoExtractedFacts(
+                brand="Apple",
+                family="MacBook Pro",
+                model_text="MacBook Pro 14 M1 Pro",
+                cpu="M1 Pro",
+                ram_gb=16,
+                storage_gb=1024,
+            ),
         )
 
         triage_repository.save(
@@ -178,7 +306,7 @@ def test_triage_repository_lists_market_check_candidates(test_container) -> None
         )
         market_check = service.run(
             event=event,
-            candidate=test_container.entity_resolution.resolve(event),
+            candidate=test_container.entity_resolution.resolve(event, photo_review=photo_review),
             photo_review=photo_review,
         )
         triage_repository.save(
